@@ -1,0 +1,6 @@
+SWB_Results*
+orion/*
+log/*
+config/*.xml
+Orion_Results*
+SLOB_Results*
