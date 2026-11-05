@@ -11,7 +11,7 @@ RUNTIME=0:1
 USERCOUNT=4
 TNSHOST=localhost
 PDBFLAG=0
-SWB_BIN=$HOME/swingbench/bin
+SWB_DIR=$HOME/swingbench
 
 while getopts "s:r:u:n:b:" opt
 do
@@ -29,8 +29,8 @@ do
       TNSHOST=$OPTARG
       ;;
     b)
-      [ ! -x $SWB_BIN/oewizard ] && err_exit "Swingbench not found at $OPTARG (oewizard not found)"
-      SWB_BIN=$OPTARG
+      [ ! -x $SWB_DIR/bin/oewizard ] && err_exit "Swingbench not found at $OPTARG (oewizard not found)"
+      SWB_DIR=$OPTARG
       ;;
     \?)
       echo "Usage: $0 [ -r run_time -u user_count -s service_name -n tnshost -b swingbench_bin ]"
@@ -88,8 +88,8 @@ sqlplus -S $connectString as sysdba <<EOF >> $LOGFILE
 EXEC DBMS_WORKLOAD_REPOSITORY.CREATE_SNAPSHOT
 EOF
 
-cd $SWB_BIN
-./charbench -cs //$TNSHOST/$SERVICE_NAME -p "$PASSWORD" -r $POCKITDIR/SWB_Results_$DATE/results.xml -rt $RUNTIME -uc $USERCOUNT -a -v users,tpm,tps,errs
+cd $SWB_DIR/bin
+./charbench -cs //$TNSHOST/$SERVICE_NAME -c $SWB_DIR/configs/SOE_Client_JDBC_Sharded.xml -p "$PASSWORD" -r $POCKITDIR/SWB_Results_$DATE/results.xml -rt $RUNTIME -uc $USERCOUNT -a -v users,tpm,tps,errs
 
 if [ "$PDBFLAG" -eq 0 ]; then
 
