@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 function print_usage {
    echo "Usage: $0 -s SID -p -n tnshost"
@@ -129,10 +129,8 @@ else
    SERVICE_NAME=$ORACLE_SID
 fi
 
-
-SOE_PASSWORD="$(openssl rand -base64 8 | sed -e 's/[+/=]/#/g')0"
 cp $POCKITDIR/config/soeconfig.template $POCKITDIR/config/${SERVICE_NAME}.xml
-sed -i -e "s|###PASSWORD###|$SOE_PASSWORD|g" $POCKITDIR/config/${SERVICE_NAME}.xml
+sed -i -e "s|###PASSWORD###|$PASSWORD|g" $POCKITDIR/config/${SERVICE_NAME}.xml
 
 cd $SWB_BIN
-./oewizard -create -scale $SCALE -cs //$TNSHOST/$SERVICE_NAME -dbap "$PASSWORD" -ts SOE -tc 16 -nopart -bigfile -allindexes -u soe -p "$SOE_PASSWORD" -cl -df $dataFilePath/soe.dbf
+./oewizard -create -scale $SCALE -cs //$TNSHOST/$SERVICE_NAME -dbap "$PASSWORD" -ts SOE -tc 16 -nopart -bigfile -allindexes -u soe -p "$PASSWORD" -cl -df $dataFilePath/soe.dbf

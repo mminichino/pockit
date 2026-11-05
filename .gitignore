@@ -4,3 +4,4 @@ log/*
 config/*.xml
 Orion_Results*
 SLOB_Results*
+.idea/
