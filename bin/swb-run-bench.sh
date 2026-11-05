@@ -88,8 +88,8 @@ sqlplus -S $connectString as sysdba <<EOF >> $LOGFILE
 EXEC DBMS_WORKLOAD_REPOSITORY.CREATE_SNAPSHOT
 EOF
 
-cd $SWB_DIR/bin
-./charbench -cs //$TNSHOST/$SERVICE_NAME -c $SWB_DIR/configs/SOE_Client_JDBC_Sharded.xml -p "$PASSWORD" -r $POCKITDIR/SWB_Results_$DATE/results.xml -rt $RUNTIME -uc $USERCOUNT -a -v users,tpm,tps,errs
+cd $SWB_DIR/bin || exit 1
+./charbench -cs //$TNSHOST/$SERVICE_NAME -c $SWB_DIR/configs/SOE_Client_Side.xml -p "$PASSWORD" -r $POCKITDIR/SWB_Results_$DATE/results.xml -rt $RUNTIME -uc $USERCOUNT -a -v users,tpm,tps,errs
 
 if [ "$PDBFLAG" -eq 0 ]; then
 
