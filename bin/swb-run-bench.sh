@@ -1,9 +1,9 @@
 #!/bin/sh
 #
 
-if [ -z "$ORACLE_HOME" -o  ! -x "$ORACLE_HOME/bin/sqlplus" ]
+if ! command -v sqlplus >/dev/null 2>&1
 then
-   echo "ORACLE_HOME is not properly set."
+   echo "sqlplus not found."
    exit 1
 fi
 
