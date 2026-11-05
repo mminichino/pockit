@@ -89,7 +89,7 @@ EXEC DBMS_WORKLOAD_REPOSITORY.CREATE_SNAPSHOT
 EOF
 
 cd $SWB_BIN
-./charbench -cs //$TNSHOST/$SERVICE_NAME -c $POCKITDIR/config/${SERVICE_NAME}-olap.xml -r $POCKITDIR/SWB_Results_$DATE/results.xml -dt thin -rt $RUNTIME -uc $USERCOUNT -a -v users,tpm,tps,errs
+./charbench -cs //$TNSHOST/$SERVICE_NAME -c $POCKITDIR/config/${SERVICE_NAME}-olap.xml -r $POCKITDIR/SWB_Results_$DATE/results.xml -dt "Oracle jdbc Driver" -rt $RUNTIME -uc $USERCOUNT -a -v users,tpm,tps,errs
 
 if [ "$PDBFLAG" -eq 0 ]; then
 
