@@ -13,7 +13,7 @@ TNSHOST=localhost
 PDBFLAG=0
 SWB_BIN=$HOME/swingbench/bin
 
-while getopts "s:r:u:n:" opt
+while getopts "s:r:u:n:b:" opt
 do
   case $opt in
     s)
