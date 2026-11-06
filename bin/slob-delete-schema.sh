@@ -1,80 +1,51 @@
-#!/bin/sh
-#
+#!/bin/bash
+
 function print_usage {
-   echo "Usage: $0 -s SID -n tnshost"
+   echo "Usage: $0 -s SID [-p pdb_name] [-n tnshost]"
 }
 
 function err_exit {
    if [ -n "$1" ]; then
-      echo "$1"
+      echo "[!] Error: $1"
    else
       print_usage
    fi
    exit 1
 }
 
-function create_connect_string {
-[ -z "$1" ] && err_exit "create_connect_string: password required."
-[ -z "$2" ] && err_exit "create_connect_string: tnshost required."
-[ -z "$3" ] && err_exit "create_connect_string: service name required."
-connectString=sys/${1}@${2}/$3
-sqlplus -S $connectString as sysdba << EOF 2>&1 > /dev/null
+function sql_ok {
+   local connect="$1"
+   shift
+   sqlplus -S -L "$connect" "$@" <<EOF >/dev/null
 whenever sqlerror exit sql.sqlcode
-whenever oserror exit
-select * from dual ;
+whenever oserror exit failure
+select 1 from dual;
+exit
 EOF
-if [ $? -eq 0 ]; then
-   return 0
-else
-   return 1
-fi
 }
 
-function get_password {
-[ -z "$1" ] && err_exit "get_password: tnshost required."
-[ -z "$2" ] && err_exit "get_password: service name required."
-
-while true
-do
-   echo -n "Password: "
-   read -s PASSWORD
-   echo ""
-   create_connect_string $PASSWORD $1 $2
-   if [ $? -ne 0 ]; then
-      echo "Password is incorrect, try again..."
-   else
-      break
-   fi
-done
-
-}
-
-if [ -z "$ORACLE_HOME" -o  ! -x "$ORACLE_HOME/bin/sqlplus" ]
+if ! command -v sqlplus >/dev/null 2>&1
 then
-   echo "ORACLE_HOME is not properly set."
-   exit 1
+   err_exit "sqlplus not found."
 fi
 
-MYID=$(id -u)
-
-if [ "$MYID" -eq 0 ]
+if [ "$(id -u)" -eq 0 ]
 then
-   echo "This script must be run as the oracle user."
-   exit 1
+   err_exit "This script must be run as the oracle user."
 fi
 
 DATE=$(date +%m%d%y_%H%M)
-ORACLE_BASE=$(echo $ORACLE_HOME | sed -n -e 's/^\(.*\)\/product\/.*$/\1/p')
 ORACLE_SID=pocdb
 export ORACLE_SID
-POCBINDIR=$(cd $(dirname $0) && pwd)
-POCKITDIR=$(echo $POCBINDIR | sed -n -e 's/^\(.*\)\/bin$/\1/p')
+POCBINDIR=$(cd "$(dirname "$0")" && pwd)
+POCKITDIR=$(echo "$POCBINDIR" | sed -n -e 's/^\(.*\)\/bin$/\1/p')
+[ -n "$POCKITDIR" ] || err_exit "Cannot determine pockit directory from $POCBINDIR"
+mkdir -p "$POCKITDIR/log"
 LOGFILE=$POCKITDIR/log/sloblog.$DATE
 TNSHOST=localhost
-connectString=""
 PDB_NAME=""
 
-while getopts "s:" opt
+while getopts "s:p:n:" opt
 do
   case $opt in
     s)
@@ -99,13 +70,21 @@ else
    SERVICE_NAME=$ORACLE_SID
 fi
 
-get_password $TNSHOST $SERVICE_NAME
-
-[ -z "$connectString" ] && err_exit "Error: could not create connect string."
+while true
+do
+   echo -n "Password: "
+   read -s PASSWORD
+   echo ""
+   connectString="sys/${PASSWORD}@${TNSHOST}/${SERVICE_NAME}"
+   if sql_ok "$connectString" as sysdba; then
+      break
+   fi
+   echo "Password is incorrect, try again..."
+done
 
 echo "Deleting tablespace IOPS"
 echo "WARNING: This operation is destructive and can not be undone."
-echo -n "Enter Oracle SID to contine: "
+echo -n "Enter Oracle SID to continue: "
 read ANSWER
 
 if [ "$ANSWER" != "$ORACLE_SID" ]; then
@@ -114,20 +93,18 @@ if [ "$ANSWER" != "$ORACLE_SID" ]; then
    exit 1
 fi
 
-echo "ORACLE HOME   = $ORACLE_HOME"
-echo "ORACLE BASE   = $ORACLE_BASE"
 echo "ORACLE SID    = $ORACLE_SID"
 echo "SERVICE NAME  = $SERVICE_NAME"
 echo "LOG FILE      = $LOGFILE"
 
 echo -n "Dropping schema ... "
 
-sqlplus -S $connectString as sysdba <<EOF >> $LOGFILE
+sqlplus -S "$connectString" as sysdba <<EOF >> "$LOGFILE"
+whenever sqlerror exit sql.sqlcode
 DROP TABLESPACE IOPS INCLUDING CONTENTS AND DATAFILES;
 EOF
 
 if [ $? -ne 0 ]; then
-   echo "Failed."
-else
-   echo "Done."
+   err_exit "dropping tablespace IOPS. See $LOGFILE"
 fi
+echo "Done."

@@ -1,5 +1,4 @@
-#!/bin/sh
-#
+#!/bin/bash
 
 function print_usage {
    echo "Usage: $0 -d directory"
@@ -7,7 +6,7 @@ function print_usage {
 
 function err_exit {
    if [ -n "$1" ]; then
-      echo "$1"
+      echo "[!] Error: $1"
    else
       print_usage
    fi
@@ -16,30 +15,18 @@ function err_exit {
 
 WORKDIR=""
 
-if [ -z "$ORACLE_HOME" -o  ! -x "$ORACLE_HOME/bin/sqlplus" ]
-then
-   echo "ORACLE_HOME is not properly set."
-   exit 1
-fi
+[ -n "$ORACLE_HOME" ] && [ -x "$ORACLE_HOME/bin/orion" ] || err_exit "Orion not found. Set ORACLE_HOME to a Database 19.3 or newer home that includes bin/orion."
 
-if [ ! -x "$ORACLE_HOME/bin/orion" ]
+if [ "$(id -u)" -eq 0 ]
 then
-   echo "Orion not found."
-   exit 1
-fi
-
-MYID=$(id -u)
-
-if [ "$MYID" -eq 0 ]
-then
-   echo "This script must be run as the oracle user."
-   exit 1
+   err_exit "This script must be run as the oracle user."
 fi
 
 DATE=$(date +%m%d%y_%H%M)
-ORACLE_BASE=$(echo $ORACLE_HOME | sed -n -e 's/^\(.*\)\/product\/.*$/\1/p')
-POCBINDIR=$(cd $(dirname $0) && pwd)
-POCKITDIR=$(echo $POCBINDIR | sed -n -e 's/^\(.*\)\/bin$/\1/p')
+POCBINDIR=$(cd "$(dirname "$0")" && pwd)
+POCKITDIR=$(echo "$POCBINDIR" | sed -n -e 's/^\(.*\)\/bin$/\1/p')
+[ -n "$POCKITDIR" ] || err_exit "Cannot determine pockit directory from $POCBINDIR"
+mkdir -p "$POCKITDIR/log" "$POCKITDIR/orion"
 LOGFILE=$POCKITDIR/log/orionlog.$DATE
 
 while getopts "d:" opt
@@ -54,38 +41,43 @@ do
   esac
 done
 
-if [ -z "$WORKDIR" -o ! -d "$WORKDIR" ]
-then
-   echo "A writable working directory is required."
-   exit 1
-fi
+[ -n "$WORKDIR" ] && [ -d "$WORKDIR" ] && [ -w "$WORKDIR" ] || err_exit "A writable working directory is required."
 
-[ ! -d $POCKITDIR/orion ] && mkdir $POCKITDIR/orion
+cd "$POCKITDIR/orion" || err_exit "Cannot change to $POCKITDIR/orion"
 
-cd $POCKITDIR/orion || err_exit "Can not change to $POCKITDIR/orion"
-
+TESTFILE="$WORKDIR/orion.file"
 echo "ORACLE HOME    = $ORACLE_HOME"
-echo "ORACLE BASE    = $ORACLE_BASE"
 echo "TEST DIRECTORY = $WORKDIR"
+echo "LOG FILE       = $LOGFILE"
 echo ""
 echo "Running benchmark ... "
 echo -n "Creating test file ... "
-dd if=/dev/zero of=/$WORKDIR/orion.file bs=65536 count=16384
+dd if=/dev/zero of="$TESTFILE" bs=65536 count=16384 >> "$LOGFILE" 2>&1
+[ $? -ne 0 ] && err_exit "creating $TESTFILE"
 echo "Done."
 
-echo /$WORKDIR/orion.file > orion.lun
+echo "$TESTFILE" > orion_large.lun
+echo "$TESTFILE" > orion_small.lun
 
-echo "Starting Orion run ..."
-$ORACLE_HOME/bin/orion -run advanced -matrix col -num_small 0 -hugenotneeded
-$ORACLE_HOME/bin/orion -run advanced -matrix row -num_large 0 -hugenotneeded
+echo "Starting large I/O run ..."
+"$ORACLE_HOME/bin/orion" -run advanced -testname orion_large -matrix col -num_small 0 -hugenotneeded >> "$LOGFILE" 2>&1
+[ $? -ne 0 ] && err_exit "Orion large I/O run failed. See $LOGFILE"
+
+echo "Starting small I/O run ..."
+"$ORACLE_HOME/bin/orion" -run advanced -testname orion_small -matrix row -num_large 0 -hugenotneeded >> "$LOGFILE" 2>&1
+[ $? -ne 0 ] && err_exit "Orion small I/O run failed. See $LOGFILE"
 echo "Done."
 
 echo -n "Cleaning up..."
-rm orion.lun
-rm /$WORKDIR/orion.file
+rm -f orion_large.lun orion_small.lun "$TESTFILE"
 echo "Done."
 
 echo -n "Saving test results ... "
-mkdir $POCKITDIR/Orion_Results_$DATE
-mv orion_*.txt orion_*.csv $POCKITDIR/Orion_Results_$DATE
+mkdir -p "$POCKITDIR/Orion_Results_$DATE"
+shopt -s nullglob
+results=(orion_large_* orion_small_*)
+if [ "${#results[@]}" -eq 0 ]; then
+   err_exit "Orion did not write result files in $POCKITDIR/orion"
+fi
+mv "${results[@]}" "$POCKITDIR/Orion_Results_$DATE/"
 echo "Done."

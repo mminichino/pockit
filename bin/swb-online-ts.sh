@@ -1,12 +1,12 @@
-#!/bin/sh
-#
+#!/bin/bash
+
 function print_usage {
-   echo "Usage: $0 -s SID -p -n tnshost"
+   echo "Usage: $0 -s SID [-p pdb_name] [-n tnshost] [-t tablespace]"
 }
 
 function err_exit {
    if [ -n "$1" ]; then
-      echo "$1"
+      echo "[!] Error: $1"
    else
       print_usage
    fi
@@ -15,10 +15,9 @@ function err_exit {
 
 TNSHOST=localhost
 PDB_NAME=""
-SWB_BIN=$HOME/swingbench/bin
-ORACLE_TS=soe
+ORACLE_TS=SOE
 
-while getopts "s:p:n:b:t:" opt
+while getopts "s:p:n:t:" opt
 do
   case $opt in
     s)
@@ -33,24 +32,14 @@ do
     t)
       ORACLE_TS=$OPTARG
       ;;
-    b)
-      [ ! -x $SWB_BIN/oewizard ] && err_exit "Swingbench not found at $OPTARG (oewizard not found)"
-      SWB_BIN=$OPTARG
-      ;;
     \?)
-      print_usage
-      exit 1
+      err_exit
       ;;
   esac
 done
 
-POCBINDIR=$(cd $(dirname $0) && pwd)
-POCKITDIR=$(echo $POCBINDIR | sed -n -e 's/^\(.*\)\/bin$/\1/p')
-
-if [ -z "$ORACLE_SID" ]; then
-   echo "No Oracle SID is set."
-   exit 1
-fi
+command -v sqlplus >/dev/null 2>&1 || err_exit "sqlplus is required, please make sure it is installed and in PATH"
+[ -n "$ORACLE_SID" ] || err_exit "No Oracle SID is set."
 
 if [ -n "$PDB_NAME" ]; then
    SERVICE_NAME=$PDB_NAME
@@ -73,49 +62,9 @@ do
    fi
 done
 
-connectString=sys/${PASSWORD}@${TNSHOST}/$ORACLE_SID
+connectString="sys/${PASSWORD}@${TNSHOST}/${SERVICE_NAME}"
 
-if [ -n "$PDB_NAME" ]; then
-pdbConId=`sqlplus -S $connectString as sysdba << EOF
-   whenever sqlerror exit sql.sqlcode
-   whenever oserror exit
-   set heading off;
-   set pagesize 0;
-   set feedback off;
-   alter session set nls_comp = linguistic ;
-   alter session set nls_sort = binary_ci ;
-   select con_id from v\\$containers where name = '$PDB_NAME' ;
-   exit;
-EOF`
-if [ $? -ne 0 ]; then
-   echo $pdbConId
-   err_exit "Error getting ID for PDB $PDB_NAME"
-fi
-if [ -z "$pdbConId" ]; then
-   err_exit "PDB $PDB_NAME does not exist in instance $ORACLE_SID"
-fi
-else
-ISCDB=`sqlplus -S $connectString as sysdba << EOF
-   whenever sqlerror exit sql.sqlcode
-   whenever oserror exit
-   set heading off;
-   set pagesize 0;
-   set feedback off;
-   select name from v\\$containers where con_id = 0;
-   exit;
-EOF`
-if [ $? -ne 0 ]; then
-   echo $ISCDB
-   err_exit "Error getting CDB status"
-fi
-if [ -z "$ISCDB" ]; then
-   pdbConId=1
-else
-   pdbConId=0
-fi
-fi
-
-sqlplus -S $connectString as sysdba << EOF
+sqlplus -S "$connectString" as sysdba << EOF
 whenever sqlerror exit sql.sqlcode
 whenever oserror exit
 set heading off;
@@ -125,5 +74,5 @@ alter tablespace $ORACLE_TS online ;
 EOF
 
 if [ $? -ne 0 ]; then
-   err_exit "Error bringing tablespace $ORACLE_TS online"
+   err_exit "bringing tablespace $ORACLE_TS online"
 fi

@@ -1,12 +1,12 @@
 #!/bin/bash
-#
+
 function print_usage {
-   echo "Usage: $0 -s SID -p -n tnshost"
+   echo "Usage: $0 -s SID [-p pdb_name] [-n tnshost] [-b swingbench_dir]"
 }
 
 function err_exit {
    if [ -n "$1" ]; then
-      echo "$1"
+      echo "[!] Error: $1"
    else
       print_usage
    fi
@@ -16,7 +16,7 @@ function err_exit {
 SCALE=1
 TNSHOST=localhost
 PDB_NAME=""
-SWB_BIN=$HOME/swingbench/bin
+SWB_DIR=$HOME/swingbench
 
 while getopts "s:p:n:b:" opt
 do
@@ -31,20 +31,16 @@ do
       TNSHOST=$OPTARG
       ;;
     b)
-      [ ! -x $SWB_BIN/oewizard ] && err_exit "Swingbench not found at $OPTARG (oewizard not found)"
-      SWB_BIN=$OPTARG
+      SWB_DIR=$OPTARG
       ;;
     \?)
-      print_usage
-      exit 1
+      err_exit
       ;;
   esac
 done
 
-if [ -z "$ORACLE_SID" ]; then
-   echo "No Oracle SID is set."
-   exit 1
-fi
+[ -n "$ORACLE_SID" ] || err_exit "No Oracle SID is set."
+[ -x "$SWB_DIR/bin/oewizard" ] || err_exit "Swingbench not found at $SWB_DIR (bin/oewizard not found)"
 
 while true
 do
@@ -61,10 +57,10 @@ do
    fi
 done
 
-connectString=sys/${PASSWORD}@${TNSHOST}/$ORACLE_SID
+connectString="sys/${PASSWORD}@${TNSHOST}/${ORACLE_SID}"
 
 if [ -n "$PDB_NAME" ]; then
-pdbConId=`sqlplus -S $connectString as sysdba << EOF
+pdbConId=$(sqlplus -S "$connectString" as sysdba << EOF
    whenever sqlerror exit sql.sqlcode
    whenever oserror exit
    set heading off;
@@ -72,56 +68,57 @@ pdbConId=`sqlplus -S $connectString as sysdba << EOF
    set feedback off;
    alter session set nls_comp = linguistic ;
    alter session set nls_sort = binary_ci ;
-   select con_id from v\\$containers where name = '$PDB_NAME' ;
+   select con_id from v\$containers where name = '$PDB_NAME' ;
    exit;
-EOF`
+EOF
+)
 if [ $? -ne 0 ]; then
-   echo $pdbConId
-   err_exit "Error getting ID for PDB $PDB_NAME"
+   echo "$pdbConId"
+   err_exit "getting ID for PDB $PDB_NAME"
 fi
-if [ -z "$pdbConId" ]; then
-   err_exit "PDB $PDB_NAME does not exist in instance $ORACLE_SID"
-fi
+pdbConId=$(echo "$pdbConId" | tr -d '[:space:]')
+[ -n "$pdbConId" ] || err_exit "PDB $PDB_NAME does not exist in instance $ORACLE_SID"
 else
-ISCDB=`sqlplus -S $connectString as sysdba << EOF
+ISCDB=$(sqlplus -S "$connectString" as sysdba << EOF
    whenever sqlerror exit sql.sqlcode
    whenever oserror exit
    set heading off;
    set pagesize 0;
    set feedback off;
-   select name from v\\$containers where con_id = 0;
+   select name from v\$containers where con_id = 0;
    exit;
-EOF`
+EOF
+)
 if [ $? -ne 0 ]; then
-   echo $ISCDB
-   err_exit "Error getting CDB status"
+   echo "$ISCDB"
+   err_exit "getting CDB status"
 fi
-if [ -z "$ISCDB" ]; then
+if [ -z "$(echo "$ISCDB" | tr -d '[:space:]')" ]; then
    pdbConId=1
 else
    pdbConId=0
 fi
 fi
 
-sysDataFile=`sqlplus -S $connectString as sysdba << EOF
+sysDataFile=$(sqlplus -S "$connectString" as sysdba << EOF
    whenever sqlerror exit sql.sqlcode
    whenever oserror exit
    set heading off;
    set pagesize 0;
    set feedback off;
-   select name from v\\$datafile where ts# = 0 and con_id = $pdbConId ;
+   select name from v\$datafile where ts# = 0 and con_id = $pdbConId ;
    exit;
-EOF`
+EOF
+)
 
 if [ $? -ne 0 ]; then
-   echo $sysDataFile
-   err_exit "Error connecing to SID $ORACLE_SID"
+   echo "$sysDataFile"
+   err_exit "connecting to SID $ORACLE_SID"
 fi
 
-dataFilePath=$(dirname $sysDataFile)
-
-POCBINDIR=$(cd $(dirname $0) && pwd)
-POCKITDIR=$(echo $POCBINDIR | sed -n -e 's/^\(.*\)\/bin$/\1/p')
+sysDataFile=$(echo "$sysDataFile" | tr -d '[:space:]')
+[ -n "$sysDataFile" ] || err_exit "locating the SYSTEM datafile for $ORACLE_SID"
+dataFilePath=$(dirname "$sysDataFile")
 
 if [ -n "$PDB_NAME" ]; then
    SERVICE_NAME=$PDB_NAME
@@ -129,8 +126,5 @@ else
    SERVICE_NAME=$ORACLE_SID
 fi
 
-cp $POCKITDIR/config/soeconfig.template $POCKITDIR/config/${SERVICE_NAME}.xml
-sed -i -e "s|###PASSWORD###|$PASSWORD|g" $POCKITDIR/config/${SERVICE_NAME}.xml
-
-cd $SWB_BIN
-./oewizard -create -scale $SCALE -cs //$TNSHOST/$SERVICE_NAME -dbap "$PASSWORD" -ts SOE -tc 16 -nopart -bigfile -allindexes -u soe -p "$PASSWORD" -cl -df $dataFilePath/soe.dbf
+cd "$SWB_DIR/bin" || err_exit "Cannot change to $SWB_DIR/bin"
+./oewizard -create -scale "$SCALE" -cs "//${TNSHOST}/${SERVICE_NAME}" -dbap "$PASSWORD" -ts SOE -tc 16 -nopart -bigfile -allindexes -u soe -p "$PASSWORD" -cl -df "$dataFilePath/soe.dbf"
